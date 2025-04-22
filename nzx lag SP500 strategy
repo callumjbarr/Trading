@@ -1,0 +1,173 @@
+
+import yfinance as yf
+from datetime import date
+import pandas as pd
+import numpy as np
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+# NYSE opens 9:30 NY time
+# NYSE closes 16:30 NY time = 8:30am NZT
+# If index closes up in US, buy NZ at open, else sell at open
+
+
+# set end date
+endDate = date.today().strftime('%Y-%m-%d')
+
+
+# import price and fx data
+importData = yf.download(["SPY", "FNZ.NZ"], start="2010-01-01", end=endDate)
+fxData =yf.download("NZDUSD=X", start="2010-01-01", end=endDate)
+
+
+# get relevant info from dataset
+nzdUSD = fxData['Close']['NZDUSD=X']
+closeData = importData['Close'][['SPY', 'FNZ.NZ']]
+openData = importData['Open'][['SPY', 'FNZ.NZ']]
+
+
+# rename the columns
+closeData.columns = ['SPY_close', 'NZ50_close']
+openData.columns = ['SPY_open', 'NZ50_open']
+
+
+# create final data df for backtest
+data = pd.concat([closeData, openData], axis=1)
+data['SPY_rtn'] = ((data['SPY_close'] - data['SPY_open']) / data['SPY_open']).fillna(0)
+data['NZDUSD'] = nzdUSD
+
+thresholds = np.arange(-0.05, 0.051, 0.001)
+#thresholds = [0,0.001]
+results = []
+
+for threshold in thresholds:
+    # create buy signal, if spy has positive return = 1, else 0
+    data['buySignal'] = (data['SPY_rtn'] > threshold).astype(int)
+
+
+    # intial value NZD and USD
+    initial_value = 10000.0
+    initialFX = data['NZDUSD'].iloc[0]
+    initialUSD = initial_value * initialFX
+
+    # setting benchmark - investing in SPY for entire test period
+    numShares = initialUSD/data['SPY_open'].iloc[0]
+    data['benchmark'] = numShares*data['SPY_close']
+    data['benchmarkNZD'] = data['benchmark']/data['NZDUSD']
+
+    for x in range (10):
+        if pd.isna(data['NZ50_open'].iloc[x]):
+            continue
+        else:
+            nzshares = initial_value / data['NZ50_open'].iloc[x]
+            break
+
+    data['NZX50_benchmark'] = nzshares*data['NZ50_close']
+
+    # trading strategy - buy NZX50 if SPY up overnight
+    # need to shift buy signal so that it aligns with the correct NZ date
+    prev = data['buySignal'].shift(1)
+    data['buy/sell'] = prev
+
+    # define columns to store trade strategy data
+    data['strategy'] = np.nan
+    data['cash'] = np.nan
+    data['portfolio'] = np.nan
+    rows = len(data)
+    cash = initial_value
+    portfolio = 0.0
+    shares = 0.0
+    vested = False
+    trade_count = 0
+
+
+    # loop through historic data
+    for i in range(rows):
+        priceOpen = data['NZ50_open'].iloc[i]
+        priceClose = data['NZ50_close'].iloc[i]
+        signal = data['buy/sell'].iloc[i]
+
+        # if the nz open price is NaN, next i and use last calculated values. (This occurs for weekends etc)
+        if np.isnan(priceOpen):
+            strat = cash + portfolio
+            data.iloc[i, data.columns.get_loc('strategy')] = strat
+            data.iloc[i, data.columns.get_loc('cash')] = cash
+            data.iloc[i, data.columns.get_loc('portfolio')] = portfolio
+            continue
+
+        # if not invested, and there is a buy signal, use cash to buy shares
+        if vested == False and signal == 1:
+                shares = cash/priceOpen
+                portfolio = shares * priceClose
+                # cash is used up
+                cash = 0.0
+                # set to invested
+                vested = True
+                trade_count += 1
+
+
+        # if invested and there is a sell signal, sell shares for cash
+        elif vested == True and signal == 0:
+                # cash from sale
+                cash = shares*priceClose
+                # portfilio is empty
+                portfolio = 0.0
+                # shares held is 0
+                shares = 0.0
+                # no longer invested
+                vested = False
+                trade_count += 1
+
+        # calc strat value
+        strat = cash + portfolio
+
+        # record values for plotting
+        data.iloc[i, data.columns.get_loc('strategy')] = strat
+        data.iloc[i, data.columns.get_loc('cash')] = cash
+        data.iloc[i, data.columns.get_loc('portfolio')] = portfolio
+
+        # print each day completed
+        print(f'test:{i}')
+        print(f'strategy value:{strat}')
+        print(f'Vested:{vested}')
+        print()
+
+
+    strat_rtn = ((data['strategy'].iloc[-1] - data['strategy'].iloc[0]) / data['strategy'].iloc[0]) * 100
+    results.append((threshold, strat_rtn))
+
+resultsdf = pd.DataFrame(results, columns=['threshold', 'return'])
+
+# plot the benchmark and trading strategy
+plt.plot(data['benchmarkNZD'], label='SPY')
+plt.plot(data['strategy'], label='Strategy')
+plt.plot(data['NZX50_benchmark'], label='NZX50')
+plt.legend()
+plt.show()
+
+plt.plot(resultsdf['threshold'], resultsdf['return'], marker='o', linestyle='-')
+plt.show()
+
+#sns.histplot(data['SPY_rtn'])
+#plt.show()
+#print(data['SPY_rtn'].mean())
+
+SPYtrn = ((data['benchmarkNZD'].iloc[-1] - data['benchmarkNZD'].iloc[0]) / data['benchmarkNZD'].iloc[0]) * 100
+Stratrtn = ((data['strategy'].iloc[-1] - data['strategy'].iloc[0]) / data['strategy'].iloc[0]) * 100
+nz50rtn = ((data['NZX50_benchmark'].iloc[-1] - data['NZX50_benchmark'].iloc[1]) / data['NZX50_benchmark'].iloc[1]) * 100
+
+maxrtnrow = resultsdf.loc[resultsdf['return'].idxmax()]
+maxthres = round(maxrtnrow['threshold']*100,4)
+
+
+print(f"SPY end value: {data['benchmarkNZD'].iloc[-1]}, return = {SPYtrn} ")
+print(f"Strategy end value: {data['strategy'].iloc[-1]}, return = {Stratrtn} ")
+print(f"NZX 50 end value: {data['NZX50_benchmark'].iloc[-1]}, return = {nz50rtn} ")
+print()
+print(f"SPY end Price: {data['SPY_close'].iloc[-1]}")
+print(f"NZX50 end Price: {data['NZ50_close'].iloc[-1]}")
+print(f'Trade count: {trade_count}')
+
+print(f'Optimal trigger percentage = {maxrtnrow}')
