@@ -1,2 +1,2 @@
 # Trading
-Back testing interesting trading strategies
+Back testing interesting trading strategies.
