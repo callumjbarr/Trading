@@ -16,6 +16,7 @@ For the signal, I calculated the daily return of SPY. The original idea was simp
 The trading rules were simple:
 
 •	If SPY’s return is greater than a set threshold, I buy (or continue holding) the NZ ETF at the market open.
+
 •	If SPY’s return is below the threshold, I sell the NZ ETF at the open and move to cash.
 
 The threshold was introduced to help reduce unnecessary trades. Since each trade includes a transaction cost, moving in and out of the market on tiny moves can eat into returns. By requiring SPY to be up by more than a small percentage, the strategy trades less frequently, ideally only when there’s a strong signal, which can lead to better net performance after fees.
@@ -29,7 +30,9 @@ Now, the big question, did I time the market? The answer, yes, but it comes with
 Here’s how a $10,000 investment from 2010 to today would have played out:
 
 •	SPY final value = $90,067
+
 •	NZX50 = $36,656
+
 •	Strategy = $52,921
 
 <img width="865" height="588" alt="image" src="https://github.com/user-attachments/assets/3c655996-ae60-4d8f-9cbb-390b9a17228e" />
@@ -37,12 +40,15 @@ Here’s how a $10,000 investment from 2010 to today would have played out:
 While the strategy did not outperform SPY, it did exceed the performance of the NZX50. But is this outperformance statistically significant? To investigate this, we first summarize the average monthly returns:
 
 •	SPY = 1.25%
+
 •	NZX50 = 0.75%
+
 •	Strategy = 0.94%
 
 We test whether the strategy's mean return is statistically higher than the NZX50’s using a one-sided paired t-test. The hypotheses are:
 
 •	H0 (Null Hypothesis): Strategy return <= NZX50 return. 
+
 •	HA (Alternative Hypothesis): Strategy return is > NZX50 return.
 
 The t-test yields a p-value of 0.0267. Since this is below the 5% significance level, we reject the null hypothesis. This provides evidence, at the 95% confidence level, that the strategy’s average monthly return is statistically greater than that of the NZX50 index.
